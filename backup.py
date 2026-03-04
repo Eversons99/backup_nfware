@@ -2,6 +2,17 @@ from netmiko.linux import LinuxSSH
 from datetime import datetime
 from conf import Setting
 import re
+import logging
+import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("backup.log"),
+        logging.StreamHandler()
+    ]
+)
 
 setting = Setting()
 
@@ -15,7 +26,7 @@ def remove_ansi_escape_sequences(text: str) -> str:
     
     Args:
         text (str): The text to clean.
-        
+
     Returns:
         str: Cleaned text without ANSI sequences and artifacts.
     """
@@ -57,11 +68,12 @@ def connect_to_nfware_server_via_ssh() -> LinuxSSH:
             ip=setting.nfw_ip,
             port=setting.nfw_port,
             username=setting.nfw_user,
-            password=setting.nfw_password
+            password=setting.nfw_password,
+            timeout=10
         )
         return ssh_connection
     except Exception as e:
-        print(f"Error connecting to NFware server: {e}")
+        logging.error(f"Error connecting to NFware server: {e}")
         return None
 
 
@@ -84,11 +96,11 @@ def get_config_from_nfware_server(ssh_connection: LinuxSSH) -> str:
         config = remove_ansi_escape_sequences(config)
         return config
     except Exception as e:
-        print(f"Error fetching config from NFware server: {e}")
+        logging.error(f"Error fetching config from NFware server: {e}")
         return ""   
 
 
-def save_backup_file_locally(config: str) -> dict:
+def save_backup_file_locally(config: str) -> str:
     """
     Save configuration to a local backup file.
     
@@ -102,13 +114,46 @@ def save_backup_file_locally(config: str) -> dict:
         dict: Status dictionary with 'success' or 'error' status and file path or error message.
     """
     try:
+        # Ensure the backups directory exists
+        os.makedirs("./backups", exist_ok=True)
+        
+        # Create a timestamped backup file name
         backup_file_name = f'backup_config__{datetime.now().strftime("%d-%m-%Y_%H-%M-%S")}.txt'
         backup_file_path = f'./backups/{backup_file_name}'
         with open(backup_file_path, "w") as backup_file:
             backup_file.write(config)
+        return backup_file_path
+    except Exception as e:
+        logging.error(f"Error saving backup file locally: {e}")
+        raise
+
+
+def save_backup_file_on_samba_ftp_server(config: str) -> dict:
+    """
+    Save configuration to a remote Samba/FTP server.
+    
+    Creates a timestamped backup file on the remote server
+    with the provided configuration content.
+    
+    Args:
+        config (str): Configuration content to save.
+        
+    Returns:
+        dict: Status dictionary with 'success' or 'error' status and file path or error message.
+    """
+    try:
+        # Implement logic to connect to Samba/FTP server and save the file
+        # This is a placeholder for demonstration purposes
+        backup_file_name = f'backup_config__{datetime.now().strftime("%d-%m-%Y_%H-%M-%S")}.txt'
+        backup_file_path = f'/remote/path/{backup_file_name}'
+        
+        # Connect to FTP serve
+        # Upload file
+        # Valid if upload is successful, otherwise raise an exception
+        
         return {"status": "success", "file_path": backup_file_path}
     except Exception as e:
-        print(f"Error saving backup file locally: {e}")
+        logging.error(f"Error saving backup file on Samba/FTP server: {e}")
         return {"status": "error", "message": str(e)}
 
 
@@ -126,22 +171,47 @@ def run() -> None:
     3. Saves backup file locally
     4. Sends status notification
     """
-    # Getting configs
-    ssh_connection = connect_to_nfware_server_via_ssh()
-    config = get_config_from_nfware_server(ssh_connection)
-    ssh_connection.disconnect()
 
-    if config == "":
-        print("No config retrieved, aborting backup process.")
+    # Getting configs
+    ssh_connection = None
+    try:
+        ssh_connection = connect_to_nfware_server_via_ssh()
+        
+        if not ssh_connection:
+            logging.warning("SSH connection failed, aborting backup process.")
+            return
+
+        config = get_config_from_nfware_server(ssh_connection)
+
+        if not config:
+            logging.warning("No config retrieved, aborting backup process.")
+            return
+
+    except Exception as e:
+        logging.error(f"Unexpected error during getting configs to backup: {e}")
+        return
+    finally:
+        if ssh_connection:
+            ssh_connection.disconnect()
+
+    # Saving Backup configs
+    try:
+        backup_path = save_backup_file_locally(config)
+        logging.info(f"Backup saved at {backup_path}")
+    except Exception:
+        logging.error("Backup failed.")
         return
 
-    # Backup configs
-    backup = save_backup_file_locally(config)
 
-    # Notifying backup status in some channel (Telgram or e-mail) the status backup 
-    notify_backup_status(backup)
 
 
 if __name__ == "__main__":
-    print('Starting backup process...')
+    logging.info('Starting backup process...')
     run()
+
+# Add a function to save file remotly to a FTP server or google drive
+# Add a function to send notifications (e.g., via email or Telegram) to inform about the backup status, including success or failure details.
+# Standardizing the raise of exceptions and error handling across all functions would improve the robustness of the code
+# Implementing logging instead of print statements would provide better traceability and debugging capabilities. -- OK
+
+
