@@ -9,8 +9,27 @@ A Python utility for backing up NFware server configurations.
 - Save backup files to local storage or remote storage (FTP Server)
 - Notify backup status via Telegram or email
 
-## Usage
+## Installation
 
+Clone the repository and install required packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Usage (Windows 11)
+Create a virtual environment to isolate project dependencies and third-party library versions. 
+
+```python
+python -m venv .venv
+```
+
+Activing the virtual environment
+```python
+    .venv/Scripts/activate
+```
+
+Running the aplication.
 ```python
 python backup.py
 ```
@@ -25,11 +44,3 @@ python backup.py
 ## Requirements
 
 - Python >= 3.11
-
-## Installation
-
-Clone the repository and install required packages:
-
-```bash
-pip install -r requirements.txt
-```
