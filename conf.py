@@ -6,6 +6,9 @@ class Setting(BaseSettings):
     nfw_password: str
     nfw_port: int
     export_config_command: str
+    ftp_host: str
+    ftp_user: str
+    ftp_password: str
     
     # Reading environment variables from .env file
     class Config:

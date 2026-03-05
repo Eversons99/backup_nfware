@@ -1,15 +1,17 @@
-from netmiko.linux import LinuxSSH
-from datetime import datetime
-from conf import Setting
 import re
 import logging
 import os
+from netmiko.linux import LinuxSSH
+from datetime import datetime
+from conf import Setting
+from ftplib import FTP
+from io import BytesIO
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("backup.log"),
+        logging.FileHandler("./logs/backup.log"),
         logging.StreamHandler()
     ]
 )
@@ -77,6 +79,25 @@ def connect_to_nfware_server_via_ssh() -> LinuxSSH:
         return None
 
 
+def connection_to_ftp_server() -> FTP:
+    """
+    Establish FTP connection to remote server.
+    
+    Connects to the FTP server using credentials from settings.
+    
+    Returns:
+        FTP: Active FTP connection object or None if connection fails.
+    """
+    try:
+        ftp = FTP(setting.ftp_host)
+        ftp.login(user=setting.ftp_user, passwd=setting.ftp_password)
+        return ftp
+
+    except Exception as e:
+        logging.error(f"Error connecting to FTP server: {e}")
+        raise
+
+
 def get_config_from_nfware_server(ssh_connection: LinuxSSH) -> str:
     """
     Retrieve and clean configuration from NFware server.
@@ -142,16 +163,26 @@ def save_backup_file_on_samba_ftp_server(config: str) -> dict:
         dict: Status dictionary with 'success' or 'error' status and file path or error message.
     """
     try:
-        # Implement logic to connect to Samba/FTP server and save the file
-        # This is a placeholder for demonstration purposes
+
         backup_file_name = f'backup_config__{datetime.now().strftime("%d-%m-%Y_%H-%M-%S")}.txt'
-        backup_file_path = f'/remote/path/{backup_file_name}'
+
+        # Connect to FTP server
+        ftp_connection = connection_to_ftp_server()
+        if not ftp_connection:
+            raise Exception("Failed to connect to FTP server")
         
-        # Connect to FTP serve
+        ftp_connection.cwd('CGNAT/NFWARE01') 
+        
+        # Convert config string to file-like object
+        file_obj = BytesIO(config.encode())
+        
         # Upload file
-        # Valid if upload is successful, otherwise raise an exception
+        ftp_connection.storbinary(f"STOR {backup_file_name}", file_obj)
+
+        ftp_connection.quit()
+
         
-        return {"status": "success", "file_path": backup_file_path}
+        # return {"status": "success", "file_path": backup_file_path}
     except Exception as e:
         logging.error(f"Error saving backup file on Samba/FTP server: {e}")
         return {"status": "error", "message": str(e)}
@@ -196,19 +227,23 @@ def run() -> None:
 
     # Saving Backup configs
     try:
-        backup_path = save_backup_file_locally(config)
-        logging.info(f"Backup saved at {backup_path}")
+        # Save backup file locally
+        # backup_path = save_backup_file_locally(config)
+        # logging.info(f"Backup saved at {backup_path}")
+        
+        # Save backup file on Samba/FTP server
+        save_backup_file_on_samba_ftp_server(config)
+        
+        
     except Exception:
         logging.error("Backup failed.")
         return
 
 
-
-
 if __name__ == "__main__":
     logging.info('Starting backup process...')
     run()
-
+    
 # Add a function to save file remotly to a FTP server or google drive
 # Add a function to send notifications (e.g., via email or Telegram) to inform about the backup status, including success or failure details.
 # Standardizing the raise of exceptions and error handling across all functions would improve the robustness of the code
