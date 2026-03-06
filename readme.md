@@ -31,7 +31,15 @@ Activing the virtual environment
 
 Running the aplication.
 ```python
-python backup.py
+python backup.py --mode local 
+
+or
+
+python backup.py --mode samba_ftp
+
+or 
+
+python backup.py --mode local samba_ftp
 ```
 
 ## Functions
