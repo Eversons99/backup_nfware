@@ -5,7 +5,7 @@ import argparse
 from netmiko.linux import LinuxSSH
 from datetime import datetime
 from conf import Setting
-from ftplib import FTP
+from ftplib import FTP, error_perm
 from io import BytesIO
 
 logging.basicConfig(
@@ -31,6 +31,12 @@ def get_args():
         choices=["local", "samba_ftp"],
         required=True,
         help="Choose backup mode: 'local' to save on local disk, 'samba_ftp' to save on remote FTP server, or both."
+    )
+    
+    parser.add_argument(
+        '--save-port-mapping',
+        required=False,
+        help='Optional argument to specify a if you want to save port mapping information.'
     )
 
     return parser.parse_args()
@@ -139,7 +145,7 @@ def get_config_from_nfware_server(ssh_connection: LinuxSSH) -> str:
         return ""   
 
 
-def save_backup_file_locally(config: str) -> str:
+def save_backup_file_locally(config: str, backup_file_name: str) -> str:
     """
     Save configuration to a local backup file.
     
@@ -148,6 +154,7 @@ def save_backup_file_locally(config: str) -> str:
     
     Args:
         config (str): Configuration content to save.
+        backup_file_name (str): Name of the backup file to create.
         
     Returns:
         dict: Status dictionary with 'success' or 'error' status and file path or error message.
@@ -157,19 +164,19 @@ def save_backup_file_locally(config: str) -> str:
 
         # Ensure the backups directory exists
         os.makedirs("./backups", exist_ok=True)
-        
-        # Create a timestamped backup file name
-        backup_file_name = f'backup_config__{datetime.now().strftime("%d-%m-%Y_%H-%M-%S")}.txt'
+
         backup_file_path = f'./backups/{backup_file_name}'
         with open(backup_file_path, "w") as backup_file:
             backup_file.write(config)
-        return backup_file_path
+
+        logging.info(f"Backup saved locally: {backup_file_path}")
+        return
     except Exception as e:
         logging.error(f"Error saving backup file locally: {e}")
         raise
 
 
-def save_backup_file_on_samba_ftp_server(config: str) -> dict:
+def save_backup_file_on_samba_ftp_server(config: str, backup_file_name: str) -> dict:
     """
     Save configuration to a remote Samba/FTP server.
     
@@ -184,32 +191,31 @@ def save_backup_file_on_samba_ftp_server(config: str) -> dict:
     """
     try:
         logging.info("Saving backup file on Samba/FTP server...")
-        backup_file_name = f'backup_config__{datetime.now().strftime("%d-%m-%Y_%H-%M-%S")}.txt'
 
         # Connect to FTP server
         ftp_connection = connection_to_ftp_server()
         if not ftp_connection:
             raise Exception("Failed to connect to FTP server")
         
-        ftp_connection.cwd('CGNAT/NFWARE01') 
-        
+        try:
+            ftp_connection.cwd('CGNAT/NFWARE01')
+        except error_perm:
+            ftp_connection.mkd('CGNAT')
+            ftp_connection.mkd('CGNAT/NFWARE01')
+            ftp_connection.cwd('CGNAT/NFWARE01')
+                
         # Convert config string to file-like object
         file_obj = BytesIO(config.encode())
         
         # Upload file
         ftp_connection.storbinary(f"STOR {backup_file_name}", file_obj)
-
         ftp_connection.quit()
 
-        
-        # return {"status": "success", "file_path": backup_file_path}
+        logging.info(f"Backup uploaded to FTP: {backup_file_name}")
+        return
     except Exception as e:
         logging.error(f"Error saving backup file on Samba/FTP server: {e}")
         return {"status": "error", "message": str(e)}
-
-
-def notify_backup_status(backup: dict) -> None:
-    pass
 
 
 def run() -> None:
@@ -248,10 +254,11 @@ def run() -> None:
 
     # Saving Backup configs
     try:
+        backup_file_name = f'backup_config__{datetime.now().strftime("%d-%m-%Y_%H-%M-%S")}.txt'
         if "local" in args.mode:
-            save_backup_file_locally(config)
+            save_backup_file_locally(config, backup_file_name)
         if "samba_ftp" in args.mode:
-            save_backup_file_on_samba_ftp_server(config)
+            save_backup_file_on_samba_ftp_server(config, backup_file_name)
 
         return
     except Exception as e:
@@ -266,5 +273,5 @@ if __name__ == "__main__":
 
 # Add a function to save file remotly to a FTP server or google drive -- OK
 # Implementing logging instead of print statements would provide better traceability and debugging capabilities. -- OK
-# Add a function to send notifications (e.g., via email or Telegram) to inform about the backup status, including success or failure details.
 # Standardizing the raise of exceptions and error handling across all functions would improve the robustness of the code
+# Add a function to send notifications (e.g., via email or Telegram) to inform about the backup status, including success or failure details.
